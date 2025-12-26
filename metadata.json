@@ -1,0 +1,5 @@
+{
+  "name": "Retro Tape Player V2",
+  "description": "A high-fidelity skeuomorphic music player with dot matrix screen, physical button simulation, and cassette tape aesthetics.",
+  "requestFramePermissions": []
+}

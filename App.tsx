@@ -9,7 +9,8 @@ import {
   Wifi,
   Radio,
   ListMusic,
-  Music
+  Music,
+  Video as VideoIcon
 } from 'lucide-react';
 
 // --- Types ---
@@ -18,6 +19,7 @@ interface Song {
   artist: string;
   src: string;
   id: string; // unique id for key
+  type: 'audio' | 'video';
 }
 
 // --- Helper Components ---
@@ -68,7 +70,10 @@ const RetroScreen = ({
   showPlaylist,
   playlist,
   currentSongIndex,
-  onSelectSong
+  onSelectSong,
+  analyser,
+  mediaRef,
+  onSongEnd
 }: { 
   isPlaying: boolean; 
   currentTime: string;
@@ -78,7 +83,61 @@ const RetroScreen = ({
   playlist: Song[];
   currentSongIndex: number;
   onSelectSong: (index: number) => void;
+  analyser: AnalyserNode | null;
+  mediaRef: React.RefObject<HTMLVideoElement>;
+  onSongEnd: () => void;
 }) => {
+  const bearImgRef = useRef<HTMLImageElement>(null);
+  
+  const currentSong = playlist[currentSongIndex];
+  const isVideo = currentSong?.type === 'video';
+
+  // Audio Reactive Bear Animation
+  useEffect(() => {
+    let rafId: number;
+    
+    const animateBear = () => {
+      if (isPlaying && analyser && bearImgRef.current && !isVideo) {
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyser.getByteFrequencyData(dataArray);
+
+        // Calculate bass energy (using first few bins)
+        // fftSize is 256, so bin 0-2 covers sub-bass/bass roughly
+        const bass = (dataArray[0] + dataArray[1] + dataArray[2]) / 3;
+        
+        // Map bass (0-255) to scale (1.0 - 1.15)
+        const scale = 1 + (bass / 255) * 0.15;
+        
+        // Map bass to brightness boost (75% base -> 110% max)
+        const brightness = 75 + (bass / 255) * 35;
+
+        bearImgRef.current.style.transform = `scale(${scale})`;
+        bearImgRef.current.style.filter = `grayscale(100%) contrast(1.4) brightness(${brightness}%)`;
+
+        rafId = requestAnimationFrame(animateBear);
+      } else if (!isPlaying && bearImgRef.current) {
+        // Reset when paused
+        bearImgRef.current.style.transform = 'scale(1)';
+        bearImgRef.current.style.filter = 'grayscale(100%) contrast(1.4) brightness(75%)';
+      }
+    };
+
+    if (isPlaying) {
+      animateBear();
+    } else {
+      // Ensure reset state if stopped
+      if (bearImgRef.current) {
+         bearImgRef.current.style.transform = 'scale(1)';
+         bearImgRef.current.style.filter = 'grayscale(100%) contrast(1.4) brightness(75%)';
+      }
+    }
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [isPlaying, analyser, isVideo]);
+
   return (
     <div className="relative w-full aspect-[4/3] bg-[#1a1a1a] rounded-lg overflow-hidden p-[2px] shadow-[inset_0_0_30px_rgba(0,0,0,1)] border-[6px] border-[#999990] ring-1 ring-black/20">
       
@@ -101,11 +160,25 @@ const RetroScreen = ({
       {/* Applied crt-bloom and animate-flicker here for the 'simulation' look */}
       <div className="relative h-full w-full bg-[#111] flex flex-col font-dot-matrix p-5 z-10 text-gray-200 overflow-hidden crt-bloom animate-flicker">
         
+        {/* --- VIDEO ELEMENT (Background Layer) --- */}
+        {/* We keep this mounted always so playback doesn't stop when switching views */}
+        <video 
+          ref={mediaRef}
+          crossOrigin="anonymous"
+          onEnded={onSongEnd}
+          className={`
+            absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-500
+            ${isVideo && !showPlaylist ? 'opacity-100' : 'opacity-0'}
+          `}
+          // Mute video element if we want to rely on WebAudio, but WebAudio connects to it so it's fine.
+          // Note: If we use display:none, some browsers stop playback optimization. Opacity 0 is safer.
+        />
+
         {/* Header Status Bar - Simplified to only show time */}
-        <div className="flex justify-between items-center border-b border-gray-500/30 pb-2 mb-2 min-h-[32px] shrink-0">
+        <div className="relative z-10 flex justify-between items-center border-b border-gray-500/30 pb-2 mb-2 min-h-[32px] shrink-0">
             <div className="flex items-center gap-2 text-xs text-gray-400 text-crt">
-               {showPlaylist ? <ListMusic size={14} /> : <Music size={14} />}
-               <span className="tracking-widest uppercase">{showPlaylist ? "PLAYLIST" : "NOW PLAYING"}</span>
+               {showPlaylist ? <ListMusic size={14} /> : (isVideo ? <VideoIcon size={14} /> : <Music size={14} />)}
+               <span className="tracking-widest uppercase">{showPlaylist ? "PLAYLIST" : (isVideo ? "VIDEO" : "NOW PLAYING")}</span>
             </div>
             <div className="text-[#ff5555] font-bold tracking-widest text-3xl leading-none text-crt" style={{ textShadow: "0 0 15px rgba(255,0,0,0.9)" }}>
                  {currentTime.slice(0, 5)}
@@ -113,16 +186,16 @@ const RetroScreen = ({
         </div>
         
         {/* Dotted Line Separator */}
-        <div className="w-full border-b-2 border-dotted border-gray-600/30 mb-2 shrink-0"></div>
+        <div className="relative z-10 w-full border-b-2 border-dotted border-gray-600/30 mb-2 shrink-0"></div>
 
         {/* Content Area Switcher */}
         {showPlaylist ? (
            // --- PLAYLIST VIEW ---
-           <div className="flex-1 overflow-y-auto overflow-x-hidden pr-2 scrollbar-thin scrollbar-track-gray-900 scrollbar-thumb-red-900/50">
+           <div className="relative z-10 flex-1 overflow-y-auto overflow-x-hidden pr-2 scrollbar-thin scrollbar-track-gray-900 scrollbar-thumb-red-900/50">
               {playlist.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-2 text-crt">
                    <p className="text-sm uppercase tracking-widest">No Tracks</p>
-                   <p className="text-[10px] uppercase">Press '1' to add music</p>
+                   <p className="text-[10px] uppercase">Press '1' to add music/video</p>
                 </div>
               ) : (
                 <ul className="space-y-1">
@@ -138,7 +211,10 @@ const RetroScreen = ({
                       `}
                     >
                       <span className="w-4 text-[10px] text-right opacity-50">{String(idx + 1).padStart(2, '0')}</span>
-                      <span className="truncate flex-1 tracking-wider font-bold">{song.title}</span>
+                      <span className="truncate flex-1 tracking-wider font-bold">
+                        {song.type === 'video' && <span className="mr-1 text-[9px] border border-gray-600 px-0.5 rounded-[1px]">VID</span>}
+                        {song.title}
+                      </span>
                       {idx === currentSongIndex && <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_red]"></div>}
                     </li>
                   ))}
@@ -148,26 +224,35 @@ const RetroScreen = ({
         ) : (
            // --- PLAYER VIEW ---
            <>
-            <div className="flex-1 flex items-center justify-between px-2 gap-4">
-                {/* Left Reel */}
-                <DigitalReel isPlaying={isPlaying} />
+            {/* If video is playing, we just show an empty spacer here because the video element is in the background covering everything */}
+            {isVideo ? (
+               <div className="flex-1 relative z-10">
+                  {/* Optional: Video overlay controls or nothing for clean look */}
+               </div>
+            ) : (
+               <div className="relative z-10 flex-1 flex items-center justify-between px-2 gap-4">
+                  {/* Left Reel */}
+                  <DigitalReel isPlaying={isPlaying} />
 
-                {/* Album Art (Center) */}
-                <div className="relative w-28 h-28 border-[1px] border-white/20 rounded-sm p-[2px] bg-black shadow-[0_0_20px_rgba(255,50,50,0.15)] shrink-0">
-                    <img 
-                        src="https://picsum.photos/id/433/200/200" 
-                        alt="Album"
-                        className="w-full h-full object-cover grayscale contrast-[1.4] brightness-75 pixelated" 
-                    />
-                    <div className="absolute inset-0 bg-red-500/20 mix-blend-color-dodge"></div>
-                </div>
+                  {/* Album Art (Center) */}
+                  <div className="relative w-28 h-28 border-[1px] border-white/20 rounded-sm p-[2px] bg-black shadow-[0_0_20px_rgba(255,50,50,0.15)] shrink-0 overflow-hidden">
+                      <img 
+                          ref={bearImgRef}
+                          src="https://picsum.photos/id/433/200/200" 
+                          alt="Album"
+                          className="w-full h-full object-cover pixelated transition-transform duration-75"
+                          style={{ filter: 'grayscale(100%) contrast(1.4) brightness(75%)' }}
+                      />
+                      <div className="absolute inset-0 bg-red-500/20 mix-blend-color-dodge pointer-events-none"></div>
+                  </div>
 
-                {/* Right Reel */}
-                <DigitalReel isPlaying={isPlaying} reverse={true} />
-            </div>
+                  {/* Right Reel */}
+                  <DigitalReel isPlaying={isPlaying} reverse={true} />
+               </div>
+            )}
 
             {/* Footer Text */}
-            <div className="text-center space-y-1 mt-3 w-full shrink-0">
+            <div className="relative z-10 text-center space-y-1 mt-3 w-full shrink-0">
                 <div className="overflow-hidden">
                     <h2 className="text-2xl text-white tracking-widest uppercase text-crt truncate leading-none w-full opacity-90">
                     {title}
@@ -419,13 +504,15 @@ export default function App() {
         title: "Giorgio by Moroder",
         artist: "Daft Punk",
         src: "", // No default source for this dummy
-        id: "default-1"
+        id: "default-1",
+        type: 'audio'
       }
   ]);
   const [currentSongIndex, setCurrentSongIndex] = useState(0);
 
   // Web Audio API State
-  const audioRef = useRef<HTMLAudioElement>(null);
+  // We now use a video element for both audio and video playback
+  const mediaRef = useRef<HTMLVideoElement>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -449,7 +536,7 @@ export default function App() {
   // Audio Setup Effect
   useEffect(() => {
     // Only set up once the audio element exists
-    if (audioRef.current && !sourceRef.current) {
+    if (mediaRef.current && !sourceRef.current) {
         // Create context lazily
         if (!audioContextRef.current) {
             const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -462,7 +549,7 @@ export default function App() {
         if (ctx) {
             try {
                 // Create nodes
-                const source = ctx.createMediaElementSource(audioRef.current);
+                const source = ctx.createMediaElementSource(mediaRef.current);
                 const ana = ctx.createAnalyser();
                 
                 // Tuned for visuals
@@ -485,12 +572,12 @@ export default function App() {
 
   // Sync Audio Element source with current playlist item
   useEffect(() => {
-      if (audioRef.current && playlist[currentSongIndex]) {
+      if (mediaRef.current && playlist[currentSongIndex]) {
           const currentSong = playlist[currentSongIndex];
-          if (currentSong.src && audioRef.current.src !== currentSong.src) {
-              audioRef.current.src = currentSong.src;
+          if (currentSong.src && mediaRef.current.src !== currentSong.src) {
+              mediaRef.current.src = currentSong.src;
               if (isPlaying) {
-                  audioRef.current.play().catch(e => console.error(e));
+                  mediaRef.current.play().catch(e => console.error(e));
               }
           }
       }
@@ -498,7 +585,7 @@ export default function App() {
 
   // Audio Playback Control
   useEffect(() => {
-    if (audioRef.current) {
+    if (mediaRef.current) {
         if (isPlaying) {
              // Ensure context is running (it suspends on auto-play policies)
              if (audioContextRef.current?.state === 'suspended') {
@@ -506,8 +593,8 @@ export default function App() {
              }
              
              // Only call play if we have a valid src
-             if (audioRef.current.src && audioRef.current.src !== window.location.href) {
-                 const playPromise = audioRef.current.play();
+             if (mediaRef.current.src && mediaRef.current.src !== window.location.href) {
+                 const playPromise = mediaRef.current.play();
                  if (playPromise !== undefined) {
                     playPromise.catch(e => {
                         console.error("Playback failed:", e);
@@ -516,15 +603,15 @@ export default function App() {
                  }
              }
         } else {
-            audioRef.current.pause();
+            mediaRef.current.pause();
         }
     }
   }, [isPlaying]);
 
   // Volume Control
   useEffect(() => {
-      if (audioRef.current) {
-          audioRef.current.volume = volume / 100;
+      if (mediaRef.current) {
+          mediaRef.current.volume = volume / 100;
       }
   }, [volume]);
 
@@ -546,9 +633,10 @@ export default function App() {
       if (files && files.length > 0) {
           const newSongs: Song[] = Array.from(files).map(file => ({
               title: file.name.replace(/\.[^/.]+$/, ""), // remove extension
-              artist: "Local Audio",
+              artist: "Local Media",
               src: URL.createObjectURL(file),
-              id: Math.random().toString(36).substr(2, 9)
+              id: Math.random().toString(36).substr(2, 9),
+              type: file.type.startsWith('video/') ? 'video' : 'audio'
           }));
 
           // If it was just the dummy default song, replace it
@@ -559,14 +647,16 @@ export default function App() {
               setPlaylist(prev => [...prev, ...newSongs]);
           }
 
-          // Automatically switch to playlist view to see new files
+          // Automatically switch to player view to see new files playing
           setShowPlaylist(false);
+          setIsPlaying(true);
       }
   };
 
   const handleSelectSong = (index: number) => {
       setCurrentSongIndex(index);
       setIsPlaying(true);
+      setShowPlaylist(false);
       // Ensure context is running when user explicitly selects a song
       if (audioContextRef.current?.state === 'suspended') {
           audioContextRef.current.resume();
@@ -616,7 +706,7 @@ export default function App() {
       setShowPlaylist(!showPlaylist);
   };
 
-  const currentSong = playlist[currentSongIndex] || { title: "No Track", artist: "" };
+  const currentSong = playlist[currentSongIndex] || { title: "No Track", artist: "", type: 'audio' };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen font-sans py-10 selection:bg-transparent">
@@ -628,13 +718,9 @@ export default function App() {
         ref={fileInputRef} 
         onChange={handleFileChange} 
         className="hidden" 
-        accept="audio/*" 
+        accept="audio/*,video/*" 
       />
-      <audio 
-        ref={audioRef} 
-        crossOrigin="anonymous"
-        onEnded={handleSongEnd}
-      />
+      {/* Video Element is now inside RetroScreen */}
 
       {/* The Device Case */}
       <div className="
@@ -657,6 +743,9 @@ export default function App() {
               playlist={playlist}
               currentSongIndex={currentSongIndex}
               onSelectSong={handleSelectSong}
+              analyser={analyser}
+              mediaRef={mediaRef}
+              onSongEnd={handleSongEnd}
             />
         </div>
 

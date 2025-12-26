@@ -180,9 +180,13 @@ const RetroScreen = ({
                {showPlaylist ? <ListMusic size={14} /> : (isVideo ? <VideoIcon size={14} /> : <Music size={14} />)}
                <span className="tracking-widest uppercase">{showPlaylist ? "PLAYLIST" : (isVideo ? "VIDEO" : "NOW PLAYING")}</span>
             </div>
-            <div className="text-[#ff5555] font-bold tracking-widest text-3xl leading-none text-crt" style={{ textShadow: "0 0 15px rgba(255,0,0,0.9)" }}>
-                 {currentTime.slice(0, 5)}
-            </div>
+            
+            {/* Conditional Time Display: Hide if playing video */}
+            {!isVideo && (
+              <div className="text-[#ff5555] font-bold tracking-widest text-3xl leading-none text-crt" style={{ textShadow: "0 0 15px rgba(255,0,0,0.9)" }}>
+                   {currentTime.slice(0, 5)}
+              </div>
+            )}
         </div>
         
         {/* Dotted Line Separator */}
@@ -227,7 +231,7 @@ const RetroScreen = ({
             {/* If video is playing, we just show an empty spacer here because the video element is in the background covering everything */}
             {isVideo ? (
                <div className="flex-1 relative z-10">
-                  {/* Optional: Video overlay controls or nothing for clean look */}
+                  {/* Video mode keeps the center clear */}
                </div>
             ) : (
                <div className="relative z-10 flex-1 flex items-center justify-between px-2 gap-4">
@@ -251,17 +255,19 @@ const RetroScreen = ({
                </div>
             )}
 
-            {/* Footer Text */}
-            <div className="relative z-10 text-center space-y-1 mt-3 w-full shrink-0">
-                <div className="overflow-hidden">
-                    <h2 className="text-2xl text-white tracking-widest uppercase text-crt truncate leading-none w-full opacity-90">
-                    {title}
-                    </h2>
-                </div>
-                <p className="text-xs text-gray-400 uppercase tracking-widest truncate text-crt opacity-70">
-                {artist}
-                </p>
-            </div>
+            {/* Footer Text - Hide if video is playing */}
+            {!isVideo && (
+              <div className="relative z-10 text-center space-y-1 mt-3 w-full shrink-0">
+                  <div className="overflow-hidden">
+                      <h2 className="text-2xl text-white tracking-widest uppercase text-crt truncate leading-none w-full opacity-90">
+                      {title}
+                      </h2>
+                  </div>
+                  <p className="text-xs text-gray-400 uppercase tracking-widest truncate text-crt opacity-70">
+                  {artist}
+                  </p>
+              </div>
+            )}
            </>
         )}
 
